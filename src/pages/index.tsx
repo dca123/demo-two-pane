@@ -80,47 +80,52 @@ const useFundsQuery = () => {
 
 const useFundsAtom = () => {
   const fundsResponse = useFundsQuery();
-  const data = useMemo(
-    () => fundsWithAtom(fundsResponse.data),
-    [fundsResponse.data]
-  );
+  console.log(fundsResponse.fetchStatus);
 
-  const unselectedFundsAtom = useMemo(
-    () =>
-      atom((get) => {
-        const funds = data.filter((fund) => get(fund.selected) === false);
+  const atoms = useMemo(() => {
+    const data = atom(fundsWithAtom(fundsResponse.data));
+
+    const unselectedFundsAtom = atom((get) => {
+      const funds = get(data).filter((fund) => get(fund.selected) === false);
+      console.log({
+        unselectedFund: funds,
+      });
+      return funds;
+    });
+    unselectedFundsAtom.debugLabel = "unselectedFundsAtom";
+    console.log("unselectedFundsAtomId", unselectedFundsAtom.toString());
+
+    const selectedFundsAtom = atom(
+      (get) => {
+        const funds = get(data).filter((fund) => get(fund.selected) === true);
+        console.log({
+          selectedFund: funds,
+        });
         return funds;
-      }),
-    [data]
-  );
+      },
+      (get, set, funds: Atom<FundWithAtom[]>) => {
+        const clickedFunds = get(funds).filter((fund) => {
+          return get(fund.clicked) === true;
+        });
+        console.log(clickedFunds);
+      }
+    );
+    selectedFundsAtom.debugLabel = "selectedFundsAtom";
+    console.log("selectedFundsAtomId", selectedFundsAtom.toString());
 
-  const selectedFundsAtom = useMemo(
-    () =>
-      atom(
-        (get) => {
-          const funds = data.filter((fund) => get(fund.selected) === true);
-          return funds;
-        },
-        (get, set) => {
-          const clickedFunds = data.filter(
-            (fund) => get(fund.clicked) === true
-          );
-          console.log(clickedFunds);
-        }
-      ),
-    [data]
-  );
+    return {
+      selectedFundsAtom,
+      unselectedFundsAtom,
+    };
+  }, [fundsResponse.fetchStatus]);
 
-  return {
-    selectedFundsAtom,
-    unselectedFundsAtom,
-  };
+  return atoms;
 };
 
 const AddButton = () => {
-  const { selectedFundsAtom } = useFundsAtom();
+  const { selectedFundsAtom, unselectedFundsAtom } = useFundsAtom();
   const setSelectedFunds = useSetAtom(selectedFundsAtom);
-  const handleClick = () => setSelectedFunds();
+  const handleClick = () => setSelectedFunds(unselectedFundsAtom);
   return (
     <button
       className="rounded bg-purple-600 p-3 px-5 text-lg text-white hover:bg-purple-500 hover:shadow-md"
