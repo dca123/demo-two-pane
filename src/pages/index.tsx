@@ -1,14 +1,15 @@
-import { inferRouterOutputs } from "@trpc/server";
+"use client";
+
+import { type inferRouterOutputs } from "@trpc/server";
 import { type NextPage } from "next";
 import Head from "next/head";
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import { AppRouter } from "~/server/api/root";
+import { useEffect } from "react";
+import { type AppRouter } from "~/server/api/root";
 import { api } from "~/utils/api";
 import { clsx } from "clsx";
 import {
-  Atom,
-  PrimitiveAtom,
+  type Atom,
+  type PrimitiveAtom,
   atom,
   useAtom,
   useAtomValue,
@@ -23,6 +24,7 @@ type FundWithAtom = Fund & {
 };
 
 const Home: NextPage = () => {
+  const query = useFundsQuery();
   return (
     <>
       <Head>
@@ -31,19 +33,18 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c]">
-        <FundsPanel />
+        {query.isFetching ? <div>Fetching</div> : <FundsPanel />}
+        {/* <FundsPanel /> */}
       </main>
     </>
   );
 };
 
 const FundsPanel = () => {
-  const query = useFundsQuery();
-  const { selectedFundsAtom, unselectedFundsAtom } = useFundsAtom();
+  // const { selectedFundsAtom, unselectedFundsAtom } = useFundsAtom();
+  console.log("rendering selectedFundsAtom", selectedFundsAtom.toString());
+  console.log("rendering unselectedFundsAtom", unselectedFundsAtom.toString());
 
-  if (query.isError) {
-    return <div className="bg-red-400 px-4 py-2">{query.error.message}</div>;
-  }
   return (
     <div className="space-y-2">
       <div className="flex space-x-6">
@@ -62,6 +63,7 @@ const FundsPanel = () => {
 };
 
 const fundsWithAtom = (data: Funds) => {
+  console.log("remaking fundsAtoms");
   const funds = data.map((fund) => ({
     ...fund,
     selected: atom(false),
@@ -71,61 +73,63 @@ const fundsWithAtom = (data: Funds) => {
 };
 
 const useFundsQuery = () => {
+  const setAllFunds = useSetAtom(allFundsAtom);
   const query = api.funds.list.useQuery(undefined, {
     initialData: [],
   });
-
+  useEffect(() => {
+    console.log("data", query.data);
+    console.log("setting all funds");
+    setAllFunds(fundsWithAtom(query.data));
+  }, [query.data, setAllFunds]);
   return query;
 };
 
-const useFundsAtom = () => {
-  const fundsResponse = useFundsQuery();
-  console.log(fundsResponse.fetchStatus);
+const allFundsAtom = atom<FundWithAtom[]>([]);
 
-  const atoms = useMemo(() => {
-    const data = atom(fundsWithAtom(fundsResponse.data));
-
-    const unselectedFundsAtom = atom((get) => {
-      const funds = get(data).filter((fund) => get(fund.selected) === false);
-      console.log({
-        unselectedFund: funds,
-      });
-      return funds;
-    });
-    unselectedFundsAtom.debugLabel = "unselectedFundsAtom";
-    console.log("unselectedFundsAtomId", unselectedFundsAtom.toString());
-
-    const selectedFundsAtom = atom(
-      (get) => {
-        const funds = get(data).filter((fund) => get(fund.selected) === true);
-        console.log({
-          selectedFund: funds,
-        });
-        return funds;
-      },
-      (get, set, funds: Atom<FundWithAtom[]>) => {
-        const clickedFunds = get(funds).filter((fund) => {
-          return get(fund.clicked) === true;
-        });
-        console.log(clickedFunds);
-      }
+const selectedFundsAtom = atom(
+  (get) => {
+    const funds = get(allFundsAtom).filter(
+      (fund) => get(fund.selected) === true
     );
-    selectedFundsAtom.debugLabel = "selectedFundsAtom";
-    console.log("selectedFundsAtomId", selectedFundsAtom.toString());
+    return funds;
+  },
+  (get, set) => {
+    const clickedFunds = get(allFundsAtom).filter(
+      (fund) => get(fund.clicked) === true
+    );
+    console.log("clickedFunds", clickedFunds);
+    clickedFunds.forEach((fund) => {
+      set(fund.selected, true);
+      set(fund.clicked, false);
+    });
+  }
+);
 
-    return {
-      selectedFundsAtom,
-      unselectedFundsAtom,
-    };
-  }, [fundsResponse.fetchStatus]);
-
-  return atoms;
-};
-
+const unselectedFundsAtom = atom(
+  (get) => {
+    const funds = get(allFundsAtom).filter(
+      (fund) => get(fund.selected) === false
+    );
+    return funds;
+  },
+  (get, set) => {
+    const clickedFunds = get(allFundsAtom).filter(
+      (fund) => get(fund.clicked) === true
+    );
+    console.log("clickedFunds", clickedFunds);
+    clickedFunds.forEach((fund) => {
+      set(fund.selected, false);
+      set(fund.clicked, false);
+    });
+  }
+);
 const AddButton = () => {
-  const { selectedFundsAtom, unselectedFundsAtom } = useFundsAtom();
   const setSelectedFunds = useSetAtom(selectedFundsAtom);
-  const handleClick = () => setSelectedFunds(unselectedFundsAtom);
+  const handleClick = () => {
+    console.log("clickedSelectedFund", selectedFundsAtom.toString());
+    setSelectedFunds();
+  };
   return (
     <button
       className="rounded bg-purple-600 p-3 px-5 text-lg text-white hover:bg-purple-500 hover:shadow-md"
