@@ -1,11 +1,28 @@
+import { inferRouterOutputs } from "@trpc/server";
 import { type NextPage } from "next";
 import Head from "next/head";
 import Link from "next/link";
+import { useMemo, useState } from "react";
+import { AppRouter } from "~/server/api/root";
 import { api } from "~/utils/api";
+import { clsx } from "clsx";
+import {
+  Atom,
+  PrimitiveAtom,
+  atom,
+  useAtom,
+  useAtomValue,
+  useSetAtom,
+} from "jotai";
+
+type Funds = inferRouterOutputs<AppRouter>["funds"]["list"];
+type Fund = Funds[number];
+type FundWithAtom = Fund & {
+  selected: PrimitiveAtom<boolean>;
+  clicked: PrimitiveAtom<boolean>;
+};
 
 const Home: NextPage = () => {
-  const hello = api.example.hello.useQuery({ text: "from tRPC" });
-
   return (
     <>
       <Head>
@@ -14,40 +31,137 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c]">
-        <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16 ">
-          <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-[5rem]">
-            Create <span className="text-[hsl(280,100%,70%)]">T3</span> App
-          </h1>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-8">
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 text-white hover:bg-white/20"
-              href="https://create.t3.gg/en/usage/first-steps"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">First Steps →</h3>
-              <div className="text-lg">
-                Just the basics - Everything you need to know to set up your
-                database and authentication.
-              </div>
-            </Link>
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 text-white hover:bg-white/20"
-              href="https://create.t3.gg/en/introduction"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">Documentation →</h3>
-              <div className="text-lg">
-                Learn more about Create T3 App, the libraries it uses, and how
-                to deploy it.
-              </div>
-            </Link>
-          </div>
-          <p className="text-2xl text-white">
-            {hello.data ? hello.data.greeting : "Loading tRPC query..."}
-          </p>
-        </div>
+        <FundsPanel />
       </main>
     </>
+  );
+};
+
+const FundsPanel = () => {
+  const query = useFundsQuery();
+  const { selectedFundsAtom, unselectedFundsAtom } = useFundsAtom();
+
+  if (query.isError) {
+    return <div className="bg-red-400 px-4 py-2">{query.error.message}</div>;
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex space-x-6">
+        <div className="flex w-fit flex-col space-y-4 border-2 p-8">
+          <h1 className="font-light text-white">Unselected Funds</h1>
+          <FundList funds={unselectedFundsAtom} />
+        </div>
+        <div className="flex w-fit flex-col space-y-4 border-2 p-8">
+          <h1 className="font-light text-white">Selected Funds</h1>
+          <FundList funds={selectedFundsAtom} />
+        </div>
+      </div>
+      <AddButton />
+    </div>
+  );
+};
+
+const fundsWithAtom = (data: Funds) => {
+  const funds = data.map((fund) => ({
+    ...fund,
+    selected: atom(false),
+    clicked: atom(false),
+  }));
+  return funds;
+};
+
+const useFundsQuery = () => {
+  const query = api.funds.list.useQuery(undefined, {
+    initialData: [],
+  });
+
+  return query;
+};
+
+const useFundsAtom = () => {
+  const fundsResponse = useFundsQuery();
+  const data = useMemo(
+    () => fundsWithAtom(fundsResponse.data),
+    [fundsResponse.data]
+  );
+
+  const unselectedFundsAtom = useMemo(
+    () =>
+      atom((get) => {
+        const funds = data.filter((fund) => get(fund.selected) === false);
+        return funds;
+      }),
+    [data]
+  );
+
+  const selectedFundsAtom = useMemo(
+    () =>
+      atom(
+        (get) => {
+          const funds = data.filter((fund) => get(fund.selected) === true);
+          return funds;
+        },
+        (get, set) => {
+          const clickedFunds = data.filter(
+            (fund) => get(fund.clicked) === true
+          );
+          console.log(clickedFunds);
+        }
+      ),
+    [data]
+  );
+
+  return {
+    selectedFundsAtom,
+    unselectedFundsAtom,
+  };
+};
+
+const AddButton = () => {
+  const { selectedFundsAtom } = useFundsAtom();
+  const setSelectedFunds = useSetAtom(selectedFundsAtom);
+  const handleClick = () => setSelectedFunds();
+  return (
+    <button
+      className="rounded bg-purple-600 p-3 px-5 text-lg text-white hover:bg-purple-500 hover:shadow-md"
+      onClick={handleClick}
+    >
+      Add
+    </button>
+  );
+};
+
+type FundListProps = {
+  funds: Atom<FundWithAtom[]>;
+};
+const FundList = (props: FundListProps) => {
+  const funds = useAtomValue(props.funds);
+  return (
+    <div className="grid grid-cols-3 gap-2 ">
+      {funds.map((fund) => (
+        <Chip {...fund} key={fund.id} />
+      ))}
+    </div>
+  );
+};
+
+type ChipProps = FundWithAtom;
+
+const Chip = (props: ChipProps) => {
+  const [clicked, setClicked] = useAtom(props.clicked);
+  const handleClick = () => setClicked((current) => !current);
+
+  return (
+    <div
+      onClick={handleClick}
+      className={clsx(
+        "cursor-pointer rounded-xl border border-white px-4 py-1",
+        clicked ? "bg-white" : "bg-transparent",
+        clicked ? "text-black" : "text-white"
+      )}
+    >
+      {props.name}
+    </div>
   );
 };
 
